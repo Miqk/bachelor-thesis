@@ -1,27 +1,50 @@
-import pandas as pd
 import ijson
-from sklearn.feature_extraction.text import CountVectorizer
+import pandas as pd
+import nltk
+import string
+import re
 
 
-def read_files_concat_to_df(file_tuple, language):
-    df = pd.DataFrame()
-    for file in file_tuple:
-        with open(file, 'r') as f:
-            objects = ijson.items(f, '', multiple_values=True)
-            df = df.append(pd.DataFrame(([pd.to_datetime(row['date']), row['content'], row['replyCount'], row['retweetCount'],
-                                          row['likeCount'], row['quoteCount'], row['lang']] for row in objects),
-                                        columns=['date', 'content', 'replyCount', 'retweetCount', 'likeCount', 'quoteCount', 'lang']), ignore_index=True)
-            print(len(df))
-    return df[df.lang == language].iloc[:, :-1]
+class TwitterData:
+    def __init__(self, file_tuple, language):
+        self.file_tuple = file_tuple
+        self.language = language
+        self.stopwords = nltk.corpus.stopwords.words('english')
+        self.stemmer = nltk.PorterStemmer()
+        self.lemmatizer = nltk.WordNetLemmatizer()
+        self.twitter_data = self.get_processed_data()
+
+    def files_to_df(self):
+        df = pd.DataFrame()
+        for file in self.file_tuple:
+            with open(file, 'r') as f:
+                objects = ijson.items(f, '', multiple_values=True)
+                df = df.append(pd.DataFrame(([pd.to_datetime(row['date']), row['content'], row['replyCount'],
+                                              row['retweetCount'], row['likeCount'], row['quoteCount'], row['lang']]
+                                             for row in objects),
+                                            columns=self.get_columns()), ignore_index=True)
+        return df[df.lang == self.language].iloc[:, :-1] if self.language else df
+
+    def cleanup_data(self, tweet_content):
+        return [self.lemmatizer.lemmatize(word) for word in
+                [self.stemmer.stem(word) for word in
+                [word for word in
+                 re.split('\W+', re.sub('[0-9]+', '',
+                                        ''.join([char for char in re.sub('((www.[^s]+)|(https?://[^s]+))', ' ', tweet_content)
+                                                 if char not in string.punctuation]))) if word not in self.stopwords]]]
+
+    def get_processed_data(self):
+        df = self.files_to_df()
+        df['processed_content'] = df['content'].apply(lambda x: self.cleanup_data(x))
+        return df
+
+
+    @staticmethod
+    def get_columns():
+        return ['date', 'content', 'replyCount', 'retweetCount', 'likeCount', 'quoteCount', 'lang']
 
 
 if __name__ == '__main__':
-    df = read_files_concat_to_df((r'E:\bachelor\btc_01_07.json', r'E:\bachelor\btc_07_14.json', r'E:\bachelor\btc_14_21.json', r'E:\bachelor\btc_21_31.json'), 'en')
-    c_vec = CountVectorizer(ngram_range=(2, 3))
-    ngrams = c_vec.fit_transform(df['content'])
-    count_values = ngrams.toarray().sum(axis=0)
-    vocab = c_vec.vocabulary_
-    df_ngram = pd.DataFrame(sorted([(count_values[i], k) for k, i in vocab.items()], reverse=True)
-                            ).rename(columns={0: 'frequency', 1: 'bigram/trigram'})
+    dane = TwitterData((r'E:\bachelor\btc_01_07.json', r'E:\bachelor\btc_07_14.json', r'E:\bachelor\btc_14_21.json', r'E:\bachelor\btc_21_31.json'), 'en')
 
 
