@@ -39,8 +39,11 @@ class TwitterData:
         df = self.files_to_df()
         df['processed_content'] = df['content'].apply(lambda x: self.cleanup_data(x))
         df['bert'] = df['content'].apply(lambda x: self.bert_classifier(x)[0])
-        df = pd.concat([df, pd.DataFrame.from_records(df['bert'])], axis=1).drop(['bert'], axis=1)
         df['vader'] = df['content'].apply(lambda review: self.vader_classifier.polarity_scores(str(review)))
+        df = pd.concat([df,
+                       pd.DataFrame.from_records(df['bert']),
+                       pd.DataFrame([float(re.findall(r'(\d\.\d\d*)', row[1].vader)[3]) for row in df.iterrows()], columns=['vader_score'])],
+                       axis=1).drop(['bert', 'vader'], axis=1)
         return df
 
     @staticmethod
