@@ -26,7 +26,7 @@ class TwitterData:
                                               row['retweetCount'], row['likeCount'], row['quoteCount'], row['lang']]
                                              for row in objects),
                                             columns=self.get_columns()), ignore_index=True)
-        return df[df.lang == self.language].iloc[:, :-1] if self.language else df
+        return df[df.lang == self.language].iloc[:, :-1].dropna() if self.language else df.dropna()
 
     def cleanup_data(self, tweet_content):
         return [self.lemmatizer.lemmatize(word) for word in
@@ -39,15 +39,13 @@ class TwitterData:
         df = self.files_to_df()
         df['processed_content'] = df['content'].apply(lambda x: self.cleanup_data(x))
         df['bert'] = df['content'].apply(lambda x: self.bert_classifier(x)[0])
-        df = pd.concat([df, pd.DataFrame.from_records(df['bert'])], axis=1)
-        df = df.drop(['bert'], axis=1)
+        df = pd.concat([df, pd.DataFrame.from_records(df['bert'])], axis=1).drop(['bert'], axis=1)
         df['vader'] = df['content'].apply(lambda review: self.vader_classifier.polarity_scores(str(review)))
         return df
 
     @staticmethod
     def get_columns():
         return ['date', 'content', 'replyCount', 'retweetCount', 'likeCount', 'quoteCount', 'lang']
-
 
 if __name__ == '__main__':
     dane = TwitterData((r'E:\bachelor\btc_01_07.json', r'E:\bachelor\btc_07_14.json', r'E:\bachelor\btc_14_21.json', r'E:\bachelor\btc_21_31.json'), 'en')
