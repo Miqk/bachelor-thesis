@@ -65,6 +65,7 @@ class TwitterData:
 if __name__ == '__main__':
     dane = TwitterData((r'E:\bachelor\btc_01_07.json', r'E:\bachelor\btc_07_14.json', r'E:\bachelor\btc_14_21.json', r'E:\bachelor\btc_21_31.json'), 'en')
     dane.twitter_data.to_csv(r'E:\bachelor\twitter_data_with_sentiment_values_12_12.json')
+    dane.twitter_data.to_csv(r'E:\bachelor\twitter_data_with_sentiment_values_12.csv')
     #dane = TwitterData((r'E:\bachelor\text-query-tweets.json', r'E:\bachelor\text-query-tweets1.json'), 'en')
 
 

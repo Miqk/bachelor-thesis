@@ -12,15 +12,22 @@ class DataGenerator:
         self.data = self.get_candlestick_data()
 
     def get_candlestick_data(self):
-        df = pd.DataFrame(
-            requests.get(self.get_url_with_parameters(self.date_start, self.offset_timestamp(self.date_start, 1))).json())
+        df = pd.DataFrame(requests.get(
+                self.get_url_with_parameters(self.date_start, self.offset_timestamp(self.date_start, 1))).json())
         for start, end in self.create_timestamp_data():
-            df = df.append(pd.DataFrame(requests.get(self.get_url_with_parameters(start, end)).json()), ignore_index=True)\
-                if end < self.date_stop else df.append(pd.DataFrame(requests.get(self.get_url_with_parameters(start, self.date_stop)).json()),
-                                                       ignore_index=True)
-        df.columns = ['open_tstmp', 'open', 'high', 'low', 'close', 'vol', 'close_tstmp', 'quote_vol', 'trades',
-                      'taker_base', 'taker_quote', 'excess_column']
+            df = df.append(pd.DataFrame(requests.get(self.get_url_with_parameters(start, end)).json()),
+                           ignore_index=True) \
+                if end < self.date_stop else df.append(
+                pd.DataFrame(requests.get(self.get_url_with_parameters(start, self.date_stop)).json()),
+                ignore_index=True)
+        df.columns = self.get_candlesticks_df_columns()
+        df['date'] = pd.to_datetime(df.open_tstmp, unit='ms', utc=True)
         return df
+
+    @staticmethod
+    def get_candlesticks_df_columns():
+        return ['open_tstmp', 'open', 'high', 'low', 'close', 'vol', 'close_tstmp', 'quote_vol', 'trades',
+                'taker_base', 'taker_quote', 'excess_column']
 
     def create_timestamp_data(self):
         return [[self.offset_timestamp(self.date_start, i+1), self.offset_timestamp(self.date_start, i+2)-1] for i in range(self.calculate_api_calls_number())]
@@ -42,4 +49,4 @@ class DataGenerator:
 
 
 if __name__ == '__main__':
-    print(DataGenerator('1m', '01/10/21', '02/10/21').data_to_csv())
+    dg = DataGenerator('1m', '01/10/21', '02/10/21').data
