@@ -1,43 +1,64 @@
 import pandas as pd
 import numpy as np
+import logging
+from datetime import datetime
 from price_data_generator import DataGenerator
+import itertools
+from ast import literal_eval
 pd.options.mode.chained_assignment = None
+
+logger = logging.getLogger('tipper')
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
 
 
 class PredictionCheck:
-    def __init__(self, threshold, date_start, date_end, intervals, shifts):
+    def __init__(self, threshold, date_start, date_end, intervals, shifts, ngram_list):
         self.threshold, self.date_start, self.date_end, self.intervals = threshold, date_start, date_end, intervals
-        self.shifts = shifts
-        self.twitter_data = pd.read_csv(r'E:/bachelor/twitter_data_with_sentiment_values_12.csv')
+        self.shifts, self.ngram_list = shifts, ngram_list
+        self.twitter_data = self.filter_df_for_ngrams(
+            pd.read_csv(r'E:/bachelor/twitter_data_with_sentiment_values_12.csv'), self.ngram_list)
         self.vader_df = self.twitter_data[abs(self.twitter_data.compound) > 0.5]
-        self.evaluation = self.get_final_scores()
-        #todo: add logging?
-        #todo: add support for bert df (another column in final scores with prediction method?)
-        #todo: add support for more thresholds
+        self.bert_df = self.create_bert_df(self.twitter_data)
+        self.evaluation = self.merge_scores_for_methods()
 
-    def calculate_interval_predictions(self, interval):
+    def calculate_interval_predictions(self, interval, df, score_column):
         dg = self.get_adj_prices(interval)
-        interval_df = self.get_adj_twitter_df(self.vader_df, 'compound', interval)
+        interval_df = self.get_adj_twitter_df(df, score_column, interval)
         return dg.merge(interval_df, left_index=True, right_index=True)
 
-    def get_final_scores(self):
-        return pd.DataFrame([[interval,
-                              shift,
-                              self.calc_accuracy(self.get_confusion_matrix(interval, shift)),
-                              self.calc_precision(self.get_confusion_matrix(interval, shift)),
-                              self.calc_recall(self.get_confusion_matrix(interval, shift)),
-                              self.calc_f1_score(
-                                  self.calc_recall(self.get_confusion_matrix(interval, shift)),
-                                  self.calc_precision(self.get_confusion_matrix(interval, shift)))]
+    def merge_scores_for_methods(self):
+        return pd.concat([self.get_final_scores(self.vader_df, 'compound'),
+                          self.get_final_scores(self.bert_df, 'bert_score')])
+
+    @staticmethod
+    def create_bert_df(df):
+        logger.info(f'Creating bert df')
+        df['label'] = df['label'].apply(lambda x: 1 if str(x) == 'POSITIVE' else -1)
+        df['bert_score'] = df['score'] * df['label']
+        return df[abs(df['bert_score']) > 0.5]
+
+    @staticmethod
+    def determine_method_col(col_name):
+        return 'vader' if col_name == 'compound' else 'bert'
+
+    def get_final_scores(self, df, score_column):
+        logger.info(f'Getting final scores for {self.determine_method_col(score_column)}')
+        return pd.DataFrame([list(itertools.chain.from_iterable(
+            [[interval, shift, self.determine_method_col(score_column)],
+             self.calc_conf_matrix_stats(interval, shift, df, score_column)]
+                                  ))
                              for shift in range(self.shifts)
                              for interval in self.intervals], columns=self.get_final_scores_columns())
 
     @staticmethod
     def get_final_scores_columns():
-        return ['interval', 'lag', 'accuracy', 'precision', 'recall', 'f1_score']
+        return ['interval', 'lag', 'method', 'accuracy', 'precision', 'recall', 'f1_score']
 
-    def get_confusion_matrix(self, interval, lag):
-        df = self.calculate_interval_predictions(interval)[['real_pred', 'price_up']]
+    def get_confusion_matrix(self, interval, lag, df, score_column):
+        logger.info(f'{datetime.now()} Calculating confusion matrix for {self.determine_method_col(score_column)},'
+                    f' interval: {interval} and lag: {lag}')
+        df = self.calculate_interval_predictions(interval, df, score_column)[['real_pred', 'price_up']]
         df['price_up'] = df['price_up'].shift(lag+1)
         df.drop(df[df['real_pred'] == 0].index, inplace=True)
         df['tp'] = np.where((df['real_pred'] == df['price_up']) & (df['real_pred'] == 1), 1, 0)
@@ -45,6 +66,11 @@ class PredictionCheck:
         df['fp'] = np.where((df['real_pred'] == 1) & (df['price_up'] == -1), 1, 0)
         df['fn'] = np.where((df['real_pred'] == -1) & (df['price_up'] == 1), 1, 0)
         return {'tp': np.sum(df['tp']), 'fn': np.sum(df['fn']), 'fp': np.sum(df['fp']), 'tn': np.sum(df['tn'])}
+
+    def calc_conf_matrix_stats(self, interval, lag, df, score_column):
+        conf_matrix = self.get_confusion_matrix(interval, lag, df, score_column)
+        return [self.calc_accuracy(conf_matrix), self.calc_precision(conf_matrix), self.calc_recall(conf_matrix),
+                self.calc_f1_score(self.calc_recall(conf_matrix), self.calc_precision(conf_matrix))]
 
     @staticmethod
     def calc_accuracy(conf_matrix):
@@ -84,6 +110,29 @@ class PredictionCheck:
         df_twtr['real_pred'] = df_twtr['meets_threshold'] * df_twtr['pred']
         return df_twtr
 
+    @staticmethod
+    def check_for_ngrams(sentence, ngram):
+        return 1 if all(sentence.split().__contains__(wrd) for wrd in ngram) else 0
+
+    def filter_df_for_ngrams(self, df, ngrams_list):
+        logger.info(f'Discarding unwanted ngrams')
+        df = self.word_list_to_str(df)
+        df['ngram_count'] = df['processed_str'].apply(lambda sentence: np.sum([self.check_for_ngrams(sentence, ngram)
+                                                                               for ngram in ngrams_list]))
+        return df[df['ngram_count'] == 0]
+
+    @staticmethod
+    def word_list_to_str(df):
+        df['processed_content'] = df.processed_content.apply(lambda x: literal_eval(x))
+        df['processed_str'] = df['processed_content'].apply(lambda x: ' '.join([str(word).lower() for word in x]))
+        return df
+
 
 if __name__ == '__main__':
-    test = PredictionCheck(0.05, '01/10/21', '01/11/21', ['15Min', '30Min', '1H', '2H', '4H'], 6).evaluation
+    sentiment_change_threshold = 0.05
+    start_date = '01/10/21'
+    end_date = '01/11/21'
+    interval_list = ['15Min', '30Min', '1H', '2H', '4H']
+    lag_number = 6
+    unwanted_ngrams = [['join', 'astroswap'], ['whale', 'alert']]
+    test = PredictionCheck(sentiment_change_threshold, start_date, end_date, interval_list, lag_number, unwanted_ngrams).evaluation
