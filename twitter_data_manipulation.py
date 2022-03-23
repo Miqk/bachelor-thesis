@@ -24,6 +24,7 @@ class TwitterData:
         self.twitter_data = self.get_processed_data()
 
     def files_to_df(self):
+        """Aggregate files, cut out languages, return pandas DataFrame"""
         df = pd.DataFrame()
         logger.info(f'{datetime.now()} Starting to concatenate files')
         for file in self.file_tuple:
@@ -37,6 +38,7 @@ class TwitterData:
         return df[df.lang == self.language].iloc[:, :-1].dropna() if self.language else df.dropna()
 
     def cleanup_data(self, tweet_content):
+        """Lemmatize, remove links and punctuaction"""
         return [self.lemmatizer.lemmatize(word) for word in
                 [word for word in
                  re.split('\W+', re.sub('[0-9]+', '',
@@ -44,6 +46,7 @@ class TwitterData:
                                                  if char not in string.punctuation]))) if word not in self.stopwords]]
 
     def get_processed_data(self):
+        """Clean up data and add BERT and VADER measures for all rows"""
         df = self.files_to_df()
         df['processed_content'] = df['content'].apply(lambda x: self.cleanup_data(x))
         logger.info(f'{datetime.now()} Tweet cleanup finished')
@@ -64,9 +67,7 @@ class TwitterData:
 
 if __name__ == '__main__':
     dane = TwitterData((r'E:\bachelor\btc_01_07.json', r'E:\bachelor\btc_07_14.json', r'E:\bachelor\btc_14_21.json', r'E:\bachelor\btc_21_31.json'), 'en')
-    dane.twitter_data.to_csv(r'E:\bachelor\twitter_data_with_sentiment_values_12_12.json')
     dane.twitter_data.to_csv(r'E:\bachelor\twitter_data_with_sentiment_values_12.csv')
-    #dane = TwitterData((r'E:\bachelor\text-query-tweets.json', r'E:\bachelor\text-query-tweets1.json'), 'en')
 
 
 
