@@ -103,7 +103,7 @@ class PredictionCheck:
 
     @staticmethod
     def interval_match(interval):
-        """Match intervals (Binance and pandas use different intervals)"""
+        """Match intervals (Binance and pandas use differently expressed intervals)"""
         return interval[:-2].lower() if 'Min' in interval else interval.lower()
 
     def get_adj_prices(self, interval):
@@ -148,5 +148,16 @@ if __name__ == '__main__':
     end_date = '01/11/21'
     interval_list = ['15Min', '30Min', '1H', '2H', '4H']
     lag_number = 6
-    unwanted_ngrams = [['join', 'astroswap'], ['whale', 'alert']]
-    test = PredictionCheck(sentiment_change_threshold, start_date, end_date, interval_list, lag_number, unwanted_ngrams).evaluation
+    unwanted_ngrams = [
+        ['join', 'astroswap'], ['pair', 'condition'], ['discord', 'group'], ['binance', 'futures'],
+        ['credit', 'card'], ['point', 'nn'], ['bullish', 'strength'], ['bullish', 'trend'], ['scan', 'results'],
+        ['aqarchain', 'estate'], ['aqarchain', 'realestate'], ['tezos', 'realestate'], ['bitcoin', 'whale', 'alert'],
+        ['whale', 'alert', 'tx'], ['bitcoin', 'whalealer'], ['btc', 'whalealert'], ['aqarchain'], ['aqarchain_io'],
+        ['tokenization', 'decentralization', 'defi'], ['short', 'btc', 'trade'], ['long', 'btc', 'trade'],
+        ['bitgame', 'btc'], ['btc', 'bitfinex', 'gt'], ['bet', 'btc', 'via'], ['btc', 'altcoin', 'polygon'],
+        ['btceur', 'crypto'], ['btc', 'btcusd', 'btcgbp'], ['btcusd', 'btcgbp', 'btceur'], ['btc', 'via'],
+        ['block', 'reward'], ['latest', 'block'], ['earn', 'btc'], ['signal', 'bit'], ['start', 'trading', 'bitcoin'],
+        ['free', 'btc'], ['current', 'price'], ['btc', 'price'], ['earn', 'bitcoin'], ['enterntaining'], ['subscribe'],
+        ['whale', 'alert'], ['btc', 'whalealert'], ['he', 'scores', 'when'], ['giveaway', 'luck']
+    ]
+    prediction_df = PredictionCheck(sentiment_change_threshold, start_date, end_date, interval_list, lag_number, unwanted_ngrams).evaluation
