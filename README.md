@@ -21,3 +21,5 @@ Sentiment change threshold is also adjustable.
 * Change the directory in files to where you saved the twitter data.
 * Use twitter_data_manipulation.py to lemmatize & tokenize the words and get sentiment predictions.
 * Check predictions using prediction_checker.py
+## Prediction stats
+Predicion stats available in model_prediction_stats.csv
