@@ -11,28 +11,33 @@ logger = logging.getLogger('tipper')
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
+TWITTER_DATA_PATH = r'E:/bachelor/twitter_data_with_sentiment_values_12.csv'
+
 
 class PredictionCheck:
     def __init__(self, threshold, date_start, date_end, intervals, shifts, ngram_list):
         self.threshold, self.date_start, self.date_end, self.intervals = threshold, date_start, date_end, intervals
         self.shifts, self.ngram_list = shifts, ngram_list
         self.twitter_data = self.filter_df_for_ngrams(
-            pd.read_csv(r'E:/bachelor/twitter_data_with_sentiment_values_12.csv'), self.ngram_list)
+            pd.read_csv(TWITTER_DATA_PATH), self.ngram_list)
         self.vader_df = self.twitter_data[abs(self.twitter_data.compound) > 0.5]
         self.bert_df = self.create_bert_df(self.twitter_data)
         self.evaluation = self.merge_scores_for_methods()
 
     def calculate_interval_predictions(self, interval, df, score_column):
+        """Retrieve predictions for certain interval"""
         dg = self.get_adj_prices(interval)
         interval_df = self.get_adj_twitter_df(df, score_column, interval)
         return dg.merge(interval_df, left_index=True, right_index=True)
 
     def merge_scores_for_methods(self):
+        """Merge scores for both VADER and BERT methods into one DataFrame"""
         return pd.concat([self.get_final_scores(self.vader_df, 'compound'),
                           self.get_final_scores(self.bert_df, 'bert_score')])
 
     @staticmethod
     def create_bert_df(df):
+        """Create df for BERT calculations from twitter data"""
         logger.info(f'Creating bert df')
         df['label'] = df['label'].apply(lambda x: 1 if str(x) == 'POSITIVE' else -1)
         df['bert_score'] = df['score'] * df['label']
@@ -43,6 +48,7 @@ class PredictionCheck:
         return 'vader' if col_name == 'compound' else 'bert'
 
     def get_final_scores(self, df, score_column):
+        """Retrieve final scores for both methods, shifts and intervals"""
         logger.info(f'Getting final scores for {self.determine_method_col(score_column)}')
         return pd.DataFrame([list(itertools.chain.from_iterable(
             [[interval, shift, self.determine_method_col(score_column)],
@@ -56,6 +62,7 @@ class PredictionCheck:
         return ['interval', 'lag', 'method', 'accuracy', 'precision', 'recall', 'f1_score']
 
     def get_confusion_matrix(self, interval, lag, df, score_column):
+        """Retrieve confusion matrix for certain prediction"""
         logger.info(f'{datetime.now()} Calculating confusion matrix for {self.determine_method_col(score_column)},'
                     f' interval: {interval} and lag: {lag}')
         df = self.calculate_interval_predictions(interval, df, score_column)[['real_pred', 'price_up']]
@@ -68,6 +75,7 @@ class PredictionCheck:
         return {'tp': np.sum(df['tp']), 'fn': np.sum(df['fn']), 'fp': np.sum(df['fp']), 'tn': np.sum(df['tn'])}
 
     def calc_conf_matrix_stats(self, interval, lag, df, score_column):
+        """Retrieve Accuracy, Precision, Recall and F1 Score"""
         conf_matrix = self.get_confusion_matrix(interval, lag, df, score_column)
         return [self.calc_accuracy(conf_matrix), self.calc_precision(conf_matrix), self.calc_recall(conf_matrix),
                 self.calc_f1_score(self.calc_recall(conf_matrix), self.calc_precision(conf_matrix))]
@@ -90,18 +98,22 @@ class PredictionCheck:
 
     @staticmethod
     def merge_dfs_with_shift(prices, twtr, shift, freq):
+        """Merge price and twitter DataFrames with certain shift"""
         return twtr.merge(prices.shift(shift, freq=freq), how='inner', left_index=True, right_index=True)
 
     @staticmethod
     def interval_match(interval):
+        """Match intervals (Binance and pandas use differently expressed intervals)"""
         return interval[:-2].lower() if 'Min' in interval else interval.lower()
 
     def get_adj_prices(self, interval):
+        """Retrieve price data and whether the price went up"""
         dg = DataGenerator(self.interval_match(interval), self.date_start, self.date_end).data
         dg['price_up'] = np.where(dg.open < dg.close, 1, -1)
         return dg.set_index('date')
 
     def get_adj_twitter_df(self, df, diff_col, interval):
+        """Manipulate twitter data: aggregate tweets for interval, return prediction if they met threshold"""
         df['date'] = pd.to_datetime(df['date'])
         df_twtr = df.groupby(pd.Grouper(key='date', freq=interval)).aggregate(np.mean)
         df_twtr['diff'] = df_twtr[diff_col] - df_twtr[diff_col].shift(1)
@@ -112,9 +124,11 @@ class PredictionCheck:
 
     @staticmethod
     def check_for_ngrams(sentence, ngram):
+        """Check if row contains ngrams"""
         return 1 if all(sentence.split().__contains__(wrd) for wrd in ngram) else 0
 
     def filter_df_for_ngrams(self, df, ngrams_list):
+        """Discards all rows that contain ngrams"""
         logger.info(f'Discarding unwanted ngrams')
         df = self.word_list_to_str(df)
         df['ngram_count'] = df['processed_str'].apply(lambda sentence: np.sum([self.check_for_ngrams(sentence, ngram)
@@ -134,5 +148,16 @@ if __name__ == '__main__':
     end_date = '01/11/21'
     interval_list = ['15Min', '30Min', '1H', '2H', '4H']
     lag_number = 6
-    unwanted_ngrams = [['join', 'astroswap'], ['whale', 'alert']]
-    test = PredictionCheck(sentiment_change_threshold, start_date, end_date, interval_list, lag_number, unwanted_ngrams).evaluation
+    unwanted_ngrams = [
+        ['join', 'astroswap'], ['pair', 'condition'], ['discord', 'group'], ['binance', 'futures'],
+        ['credit', 'card'], ['point', 'nn'], ['bullish', 'strength'], ['bullish', 'trend'], ['scan', 'results'],
+        ['aqarchain', 'estate'], ['aqarchain', 'realestate'], ['tezos', 'realestate'], ['bitcoin', 'whale', 'alert'],
+        ['whale', 'alert', 'tx'], ['bitcoin', 'whalealer'], ['btc', 'whalealert'], ['aqarchain'], ['aqarchain_io'],
+        ['tokenization', 'decentralization', 'defi'], ['short', 'btc', 'trade'], ['long', 'btc', 'trade'],
+        ['bitgame', 'btc'], ['btc', 'bitfinex', 'gt'], ['bet', 'btc', 'via'], ['btc', 'altcoin', 'polygon'],
+        ['btceur', 'crypto'], ['btc', 'btcusd', 'btcgbp'], ['btcusd', 'btcgbp', 'btceur'], ['btc', 'via'],
+        ['block', 'reward'], ['latest', 'block'], ['earn', 'btc'], ['signal', 'bit'], ['start', 'trading', 'bitcoin'],
+        ['free', 'btc'], ['current', 'price'], ['btc', 'price'], ['earn', 'bitcoin'], ['enterntaining'], ['subscribe'],
+        ['whale', 'alert'], ['btc', 'whalealert'], ['he', 'scores', 'when'], ['giveaway', 'luck']
+    ]
+    prediction_df = PredictionCheck(sentiment_change_threshold, start_date, end_date, interval_list, lag_number, unwanted_ngrams).evaluation
